@@ -1,0 +1,40 @@
+name: Публикация релиза
+
+# Пакеты кладутся в папку incoming/ вместе с файлами VERSION и NOTES.md.
+# Этот процесс создаёт из них релиз с прямыми ссылками и очищает папку.
+on:
+  push:
+    branches: [main]
+    paths: ["incoming/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          [ -f incoming/VERSION ] || { echo "нет incoming/VERSION"; exit 0; }
+          VER="$(tr -d '[:space:]' < incoming/VERSION)"
+          TAG="v${VER}"
+          FILES=$(ls incoming/*.deb incoming/*.rpm 2>/dev/null || true)
+          [ -n "$FILES" ] || { echo "нет пакетов"; exit 0; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber $FILES
+          else
+            gh release create "$TAG" --title "Arthem ${VER}" --notes-file incoming/NOTES.md --latest $FILES
+          fi
+      - name: Очистить incoming
+        run: |
+          git config user.name "arthem-release"
+          git config user.email "arthem-release@users.noreply.github.com"
+          git rm -rq incoming
+          git commit -qm "Релиз опубликован, папка incoming очищена"
+          git push -q
